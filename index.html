@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12181E">
+<meta name="description" content="주변 밝기를 읽어 횡단보도 안전등 점등 여부를 판단하는 앱. F = PL + VL + PVR">
+<title>빛길ON — 어두움 감지 안전등</title>
+<style>
+:root{
+  --ink:#12181E; --panel:#1B242D; --panel2:#222D38; --edge:#2E3B47;
+  --coral:#E24E36; --gold:#F2B138; --sky:#8FC6D6; --mint:#7FB3A3;
+  --text:#EEF3F7; --dim:#8797A4;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ink); color:var(--text); font-family:var(--sans);
+  min-height:100svh; padding:max(14px,env(safe-area-inset-top)) 14px max(24px,env(safe-area-inset-bottom));
+  transition:background .5s ease;
+}
+body.on{background:#1A1710}
+main{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+/* ── brand ───────────────────────────── */
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:2px 2px 0}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em}
+h1 em{font-style:normal;color:var(--coral)}
+body.on h1 em{color:var(--gold)}
+
+/* ── signature: the lamp ─────────────── */
+.lamp{
+  position:relative; overflow:hidden; border-radius:20px;
+  background:var(--panel); border:1px solid var(--edge);
+  min-height:236px; display:flex; align-items:flex-end; padding:20px;
+  transition:background .5s ease, border-color .5s ease;
+}
+body.on .lamp{background:#241D10;border-color:#5A4415}
+.beam{
+  position:absolute; left:50%; top:-14%; width:78%; aspect-ratio:1/1.05;
+  transform:translateX(-50%);
+  clip-path:polygon(50% 0,100% 100%,0 100%);
+  background:linear-gradient(180deg,rgba(242,177,56,.62),rgba(242,177,56,.02));
+  opacity:0; transition:opacity .5s ease;
+}
+body.on .beam{opacity:1;animation:breathe 3.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.82}50%{opacity:1}}
+.bulb{
+  position:absolute; left:50%; top:14px; width:22px; height:22px; margin-left:-11px;
+  border-radius:50%; background:#3A4653; transition:background .4s ease, box-shadow .4s ease;
+}
+body.on .bulb{background:var(--gold);box-shadow:0 0 34px 12px rgba(242,177,56,.55)}
+.walker{position:absolute;left:50%;bottom:74px;margin-left:-7px;opacity:.9}
+.walker i{display:block;background:#5B6975;transition:background .4s ease}
+body.on .walker i{background:#F0E6D2}
+.walker .head{width:14px;height:14px;border-radius:50%}
+.walker .body{width:10px;height:30px;margin:3px 0 0 2px;border-radius:4px}
+.lamp-state{position:relative;z-index:2}
+.lamp-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--dim)}
+.lamp-value{display:block;font-size:52px;line-height:1;font-weight:800;letter-spacing:-.03em;margin:4px 0 6px;color:#6C7A86}
+body.on .lamp-value{color:var(--gold)}
+.lamp-reason{margin:0;font-size:13px;line-height:1.5;color:#A9B7C2;max-width:24ch}
+body.on .lamp-reason{color:#D8CBAE}
+
+/* ── generic panel ───────────────────── */
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:16px;padding:16px}
+.panel h2{margin:0 0 12px;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--dim)}
+
+/* ── gate ────────────────────────────── */
+.gate p{margin:10px 0 0;font-size:12px;line-height:1.6;color:var(--dim)}
+button.primary{
+  width:100%;padding:15px;border:0;border-radius:12px;background:var(--coral);
+  color:#fff;font-family:var(--sans);font-size:16px;font-weight:700;cursor:pointer
+}
+button.primary:active{transform:translateY(1px)}
+
+/* ── meter ───────────────────────────── */
+.meter-num{display:flex;align-items:baseline;gap:6px;font-family:var(--mono)}
+.meter-num span{font-size:40px;font-weight:700;letter-spacing:-.02em}
+.meter-num small{font-size:13px;color:var(--dim)}
+.bar{position:relative;height:10px;border-radius:99px;background:#131A21;margin:12px 0 8px;overflow:hidden}
+.bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#31404C,var(--sky));transition:width .3s ease}
+.bar .mark{position:absolute;top:-4px;width:2px;height:18px;background:var(--coral);border-radius:2px;transition:left .2s ease}
+.meta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.meta b{color:var(--sky);font-weight:700}
+
+/* ── term chips ──────────────────────── */
+.terms{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.term{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:12px 10px;text-align:center;transition:.3s}
+.term b{display:block;font-family:var(--mono);font-size:19px;font-weight:700;color:#556370;transition:color .3s}
+.term small{display:block;margin-top:4px;font-size:10.5px;color:var(--dim);line-height:1.4}
+.term.hot{border-color:currentColor;background:#241D10}
+.term.hot b{color:inherit}
+#tPL{color:var(--coral)} #tVL{color:var(--gold)} #tPVR{color:var(--sky)}
+
+/* ── input rows ──────────────────────── */
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #232E38}
+.row:last-child{border-bottom:0}
+.row .label{display:flex;align-items:center;gap:9px;font-size:14px}
+.row .key{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--dim);width:14px}
+.row .sub{display:block;font-size:11px;color:var(--dim);margin-top:2px}
+.sw{position:relative;width:48px;height:28px;flex:0 0 auto;border-radius:99px;background:#2B3743;border:0;cursor:pointer;transition:background .25s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#8797A4;transition:.25s}
+.sw[aria-checked="true"]{background:rgba(226,78,54,.3)}
+.sw[aria-checked="true"]::after{left:23px;background:var(--coral)}
+.auto{font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid var(--edge);border-radius:99px;padding:5px 11px}
+.auto.hot{color:var(--gold);border-color:#5A4415;background:#241D10}
+
+/* ── controls ────────────────────────── */
+input[type=range]{width:100%;accent-color:var(--coral);margin:6px 0 2px}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.btns button,.ghost{
+  padding:11px 8px;border-radius:10px;border:1px solid var(--edge);background:#141C23;
+  color:var(--text);font-family:var(--sans);font-size:12.5px;font-weight:600;cursor:pointer
+}
+.btns button:active{background:#1E2831}
+.seg{display:flex;gap:6px;margin-top:10px}
+.seg button{flex:1;padding:9px 4px;border-radius:9px;border:1px solid var(--edge);background:#141C23;color:var(--dim);font-family:var(--mono);font-size:11.5px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:#2A2115;border-color:#5A4415;color:var(--gold)}
+.note{margin:10px 0 0;font-size:11.5px;line-height:1.6;color:var(--dim)}
+.note code{font-family:var(--mono);color:var(--sky)}
+
+/* ── truth table ─────────────────────── */
+details{background:var(--panel);border:1px solid var(--edge);border-radius:16px;padding:14px 16px}
+summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--dim);list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:" ▾";color:var(--edge)}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-family:var(--mono);font-size:11.5px}
+th{color:var(--dim);font-weight:600;padding:6px 2px;border-bottom:1px solid var(--edge);text-align:center}
+td{padding:5px 2px;text-align:center;color:#B7C3CD;border-bottom:1px solid #1F2830}
+tr.on td{color:var(--gold)}
+tr.now td{background:#2A2115;color:#fff}
+td.f{font-weight:700}
+
+footer{text-align:center;font-family:var(--mono);font-size:12px;color:var(--dim);padding:2px 0 6px}
+footer b{color:var(--coral)}
+.pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:99px;background:#182029;border:1px solid var(--edge);color:var(--mint)}
+video,canvas.hidden{display:none}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+
+  <header class="brand">
+    <h1>빛길<em>ON</em></h1>
+    <span class="eyebrow">F = PL + VL + PVR</span>
+  </header>
+
+  <!-- 시그니처: 화면 자체가 안전등 -->
+  <section class="lamp" id="lamp" aria-live="polite">
+    <div class="beam"></div>
+    <div class="bulb"></div>
+    <div class="walker"><i class="head"></i><i class="body"></i></div>
+    <div class="lamp-state">
+      <span class="lamp-label" id="lampLabel">안전등</span>
+      <strong class="lamp-value" id="lampValue">OFF</strong>
+      <p class="lamp-reason" id="lampReason">센서를 켜면 주변 밝기를 읽어 점등 여부를 판단합니다.</p>
+    </div>
+  </section>
+
+  <section class="panel gate" id="gate">
+    <button class="primary" id="startBtn">밝기 센서 켜기</button>
+    <p>조도 센서를 지원하지 않는 기기에서는 카메라 영상의 평균 밝기로 어두움을 판단합니다. 촬영 화면은 저장·전송하지 않고 밝기 값만 계산합니다.</p>
+  </section>
+
+  <section class="panel" id="readout" hidden>
+    <h2>주변 밝기</h2>
+    <div class="meter-num"><span id="lightVal">--</span><small id="lightUnit">lx</small></div>
+    <div class="bar"><div class="fill" id="meterFill"></div><div class="mark" id="meterMark" style="left:20%"></div></div>
+    <div class="meta"><span id="srcLabel">대기 중</span><span>L = <b id="lStateLabel">0</b></span></div>
+  </section>
+
+  <section class="terms">
+    <div class="term" id="tPL"><b>PL</b><small>어두운 곳<br>보행자</small></div>
+    <div class="term" id="tVL"><b>VL</b><small>어두운 곳<br>차량</small></div>
+    <div class="term" id="tPVR"><b>PVR</b><small>우천 시<br>보행+차량</small></div>
+  </section>
+
+  <section class="panel">
+    <h2>입력 변수</h2>
+    <div class="row">
+      <span class="label"><span class="key">P</span><span>보행자<span class="sub">이 기기를 든 사람</span></span></span>
+      <button class="sw" id="swP" role="switch" aria-checked="true" aria-label="보행자 감지"></button>
+    </div>
+    <div class="row">
+      <span class="label"><span class="key">V</span><span>접근 차량<span class="sub">직접 켜서 확인</span></span></span>
+      <button class="sw" id="swV" role="switch" aria-checked="false" aria-label="접근 차량"></button>
+    </div>
+    <div class="row">
+      <span class="label"><span class="key">L</span><span>주변 밝기<span class="sub">센서가 자동 판단</span></span></span>
+      <span class="auto" id="autoL">어두움 아님</span>
+    </div>
+    <div class="row">
+      <span class="label"><span class="key">R</span><span>비 · 노면 위험<span class="sub">직접 켜서 확인</span></span></span>
+      <button class="sw" id="swR" role="switch" aria-checked="false" aria-label="비 또는 노면 위험"></button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>어두움 기준 <span id="thLabel" class="pill">--</span></h2>
+    <input type="range" id="thRange" min="1" max="100" value="12" aria-label="어두움 임계값">
+    <div class="meta"><span>더 민감하게</span><span>더 둔감하게</span></div>
+    <div class="btns">
+      <button id="calDark">지금이 어두움</button>
+      <button id="calBright">지금이 밝음</button>
+    </div>
+    <div class="seg" role="group" aria-label="밝기 측정 방식">
+      <button id="mALS" aria-pressed="false">조도 센서</button>
+      <button id="mCAM" aria-pressed="false">카메라</button>
+      <button id="mMAN" aria-pressed="false">시연 모드</button>
+    </div>
+    <input type="range" id="manRange" min="0" max="100" value="60" hidden aria-label="시연용 밝기">
+    <p class="note" id="srcNote">두 곳에서 한 번씩 보정하면 기준값이 두 측정값의 중간으로 잡힙니다. 켜짐과 꺼짐 사이에는 <code>±8%</code>의 여유를 둬 경계에서 깜빡이지 않습니다.</p>
+  </section>
+
+  <details>
+    <summary>진리표 16행 · 자체 검증 <span class="pill" id="testPill">--</span></summary>
+    <table>
+      <thead><tr><th>m</th><th>P</th><th>V</th><th>L</th><th>R</th><th>F</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p class="note">현재 입력 조합이 강조 표시됩니다. F열은 <code>(P&amp;&amp;L)||(V&amp;&amp;L)||(P&amp;&amp;V&amp;&amp;R)</code>로 계산한 값이며, 포스터의 <code>Σm(6,7,10,11,13,14,15)</code>와 매 실행마다 대조합니다.</p>
+  </details>
+
+  <footer>F = <b>PL</b> + <b>VL</b> + <b>PVR</b></footer>
+</main>
+
+<video id="vid" playsinline muted autoplay></video>
+<canvas id="cv" class="hidden" width="64" height="48"></canvas>
+
+<script>
+"use strict";
+
+/* ── 1. 논리 계층 : 포스터의 최소 부울식 ───────────────── */
+const F = (P,V,L,R) => ((P&&L)||(V&&L)||(P&&V&&R)) ? 1 : 0;
+const EXPECTED = new Set([6,7,10,11,13,14,15]);   // Σm — 손으로 만든 진리표
+const bits = i => [3,2,1,0].map(b => (i>>b)&1);   // 2⁴ 전수 열거
+
+function selfTest(){
+  let pass = 0; const fails = [];
+  for(let i=0;i<16;i++){
+    const [P,V,L,R] = bits(i);
+    (F(P,V,L,R) === (EXPECTED.has(i)?1:0)) ? pass++ : fails.push(i);
+  }
+  return {pass, fails};
+}
+
+/* ── 2. 상태 ──────────────────────────────────────────── */
+const state = { P:1, V:0, L:0, R:0, mode:"none", raw:null, smooth:null, on:false };
+
+const MODES = {
+  als:{ unit:"lx",  max:120, def:12, label:"조도 센서" },
+  cam:{ unit:"%",   max:100, def:22, label:"카메라 밝기" },
+  man:{ unit:"%",   max:100, def:35, label:"시연 모드" }
+};
+const th = { als:MODES.als.def, cam:MODES.cam.def, man:MODES.man.def };
+
+/* 보정값 저장 — 저장이 막힌 환경에서는 조용히 메모리만 사용 */
+const store = {
+  get(k){ try{ const v = localStorage.getItem(k); return v==null?null:JSON.parse(v); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ /* 무시 */ } }
+};
+(function loadTh(){ const s = store.get("bitgil.th"); if(s) Object.assign(th, s); })();
+
+const $ = id => document.getElementById(id);
+const el = {
+  lampValue:$("lampValue"), lampLabel:$("lampLabel"), lampReason:$("lampReason"),
+  gate:$("gate"), readout:$("readout"), startBtn:$("startBtn"),
+  lightVal:$("lightVal"), lightUnit:$("lightUnit"), fill:$("meterFill"), mark:$("meterMark"),
+  srcLabel:$("srcLabel"), lState:$("lStateLabel"), autoL:$("autoL"),
+  thRange:$("thRange"), thLabel:$("thLabel"), manRange:$("manRange"), srcNote:$("srcNote"),
+  tbody:$("tbody"), testPill:$("testPill"),
+  tPL:$("tPL"), tVL:$("tVL"), tPVR:$("tPVR")
+};
+
+/* ── 3. 센서 계층 ─────────────────────────────────────── */
+let camTimer = null, alsSensor = null, stream = null;
+
+function stopSensors(){
+  if(camTimer){ clearInterval(camTimer); camTimer = null; }
+  if(alsSensor){ try{ alsSensor.stop(); }catch(e){} alsSensor = null; }
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+}
+
+async function startALS(){
+  if(!("AmbientLightSensor" in window)) return false;
+  try{
+    if(navigator.permissions){
+      const p = await navigator.permissions.query({name:"ambient-light-sensor"});
+      if(p.state === "denied") return false;
+    }
+  }catch(e){ /* 권한 조회 미지원 — 그대로 진행 */ }
+  return new Promise(resolve=>{
+    let settled = false;
+    try{
+      const s = new AmbientLightSensor({frequency:5});
+      s.addEventListener("reading", ()=>{
+        if(!settled){ settled = true; resolve(true); }
+        feed(s.illuminance);
+      });
+      s.addEventListener("error", ()=>{ if(!settled){ settled = true; resolve(false); } });
+      s.start();
+      alsSensor = s;
+      setTimeout(()=>{ if(!settled){ settled = true; resolve(false); } }, 1600);
+    }catch(e){ resolve(false); }
+  });
+}
+
+async function startCam(){
+  const vid = $("vid"), cv = $("cv"), ctx = cv.getContext("2d", {willReadFrequently:true});
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:"environment"}, width:{ideal:320}, height:{ideal:240} }, audio:false
+    });
+  }catch(e){
+    try{ stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false}); }
+    catch(e2){ return false; }
+  }
+  vid.srcObject = stream;
+  try{ await vid.play(); }catch(e){}
+
+  /* 자동 노출이 어둠을 보정해버리므로 가능하면 노출을 고정한다 */
+  let locked = false;
+  try{
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if(caps.exposureMode && caps.exposureMode.includes("manual")){
+      const t = caps.exposureTime;
+      await track.applyConstraints({ advanced:[{ exposureMode:"manual", exposureTime: t ? (t.min+t.max)/2 : undefined }] });
+      locked = true;
+    }
+  }catch(e){ /* 미지원 — 보정으로 대응 */ }
+
+  camTimer = setInterval(()=>{
+    if(vid.readyState < 2) return;
+    ctx.drawImage(vid, 0, 0, cv.width, cv.height);
+    const d = ctx.getImageData(0,0,cv.width,cv.height).data;
+    let sum = 0;
+    for(let i=0;i<d.length;i+=4) sum += 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+    feed((sum / (d.length/4)) / 255 * 100);
+  }, 250);
+
+  el.srcNote.textContent = locked
+    ? "카메라 노출을 고정해 측정합니다. 실내에서 한 번, 어두운 곳에서 한 번 보정하면 기준이 정확해집니다."
+    : "이 기기는 카메라 노출 고정을 지원하지 않아 자동 노출 보정이 섞입니다. 실제 사용할 장소에서 두 번 보정해 주세요.";
+  return true;
+}
+
+async function setMode(mode){
+  stopSensors();
+  let ok = true;
+  if(mode === "als")      ok = await startALS();
+  else if(mode === "cam") ok = await startCam();
+  else { state.raw = Number(el.manRange.value); state.smooth = state.raw; }
+
+  if(!ok){
+    if(mode === "als"){ return setMode("cam"); }
+    if(mode === "cam"){
+      el.srcNote.textContent = "카메라를 사용할 수 없습니다. HTTPS 주소인지, 브라우저에 카메라 권한을 허용했는지 확인해 주세요. 그동안 시연 모드로 전환합니다.";
+      return setMode("man");
+    }
+  }
+
+  state.mode = mode;
+  if(mode !== "man"){ state.raw = null; state.smooth = null; }
+  const M = MODES[mode];
+  el.lightUnit.textContent = M.unit;
+  el.srcLabel.textContent  = M.label;
+  el.thRange.max = M.max;
+  el.thRange.value = th[mode];
+  el.manRange.hidden = (mode !== "man");
+  ["mALS","mCAM","mMAN"].forEach((id,i)=> $(id).setAttribute("aria-pressed", String(["als","cam","man"][i] === mode)));
+  el.gate.hidden = true; el.readout.hidden = false;
+  paintThreshold();
+  render();
+}
+
+/* ── 4. 신호 처리 : 평활 + 히스테리시스 ────────────────── */
+function feed(v){
+  state.raw = v;
+  state.smooth = (state.smooth == null) ? v : state.smooth*0.75 + v*0.25;
+  decideL();
+  render();
+}
+
+function decideL(){
+  const M = MODES[state.mode] || MODES.cam;
+  const t = th[state.mode] ?? M.def;
+  const gap = M.max * 0.08;                       // 경계에서 깜빡이지 않도록
+  const v = state.smooth;
+  if(v == null) return;
+  if(state.L === 1){ if(v > t + gap) state.L = 0; }
+  else            { if(v < t - gap) state.L = 1; }
+}
+
+/* ── 5. 알림 ──────────────────────────────────────────── */
+let lastAlert = 0, wakeLock = null;
+async function keepAwake(){
+  try{ if("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") keepAwake(); });
+
+function alertOn(){
+  const now = Date.now();
+  if(now - lastAlert < 4000) return;
+  lastAlert = now;
+  try{ if(navigator.vibrate) navigator.vibrate([220,90,220]); }catch(e){}
+}
+
+/* ── 6. 렌더 ──────────────────────────────────────────── */
+function render(){
+  const {P,V,L,R} = state;
+  const PL = P&&L, VL = V&&L, PVR = P&&V&&R;
+  const on = F(P,V,L,R) === 1;
+
+  if(on && !state.on) alertOn();
+  state.on = on;
+  document.body.classList.toggle("on", on);
+
+  el.lampValue.textContent = on ? "ON" : "OFF";
+  el.lampLabel.textContent = on ? "안전등 점등" : "안전등 소등";
+  el.lampReason.textContent =
+      PL  ? "어두운 길에 보행자가 있습니다. 빛으로 위치를 알립니다."
+    : VL  ? "어두운 길에 차량이 접근합니다. 운전자 시야를 확보합니다."
+    : PVR ? "비로 제동거리가 늘었고 보행자와 차량이 함께 있습니다."
+    : (L ? "어둡지만 보호할 대상이 없어 켜지 않습니다."
+         : "주변이 밝아 추가 조명이 필요하지 않습니다.");
+
+  el.tPL.classList.toggle("hot", !!PL);
+  el.tVL.classList.toggle("hot", !!VL);
+  el.tPVR.classList.toggle("hot", !!PVR);
+
+  const M = MODES[state.mode] || MODES.cam;
+  const v = state.smooth;
+  el.lightVal.textContent = (v == null) ? "--" : (M.unit === "lx" ? Math.round(v) : v.toFixed(1));
+  const pct = v == null ? 0 : Math.min(100, Math.max(0, v / M.max * 100));
+  el.fill.style.width = pct + "%";
+  el.lState.textContent = L;
+  el.autoL.textContent = L ? "어두움 감지됨" : "어두움 아님";
+  el.autoL.classList.toggle("hot", !!L);
+
+  const idx = (P<<3)|(V<<2)|(L<<1)|R;
+  [...el.tbody.rows].forEach((r,i)=> r.classList.toggle("now", i === idx));
+}
+
+function paintThreshold(){
+  const M = MODES[state.mode] || MODES.cam;
+  const t = th[state.mode] ?? M.def;
+  el.thLabel.textContent = (M.unit === "lx" ? Math.round(t) + " lx 미만" : t.toFixed(0) + "% 미만");
+  el.mark.style.left = Math.min(100, t / M.max * 100) + "%";
+}
+
+/* ── 7. 입력 배선 ─────────────────────────────────────── */
+function bindSwitch(id, key){
+  const b = $(id);
+  b.addEventListener("click", ()=>{
+    state[key] = state[key] ? 0 : 1;
+    b.setAttribute("aria-checked", String(!!state[key]));
+    render();
+  });
+}
+bindSwitch("swP","P"); bindSwitch("swV","V"); bindSwitch("swR","R");
+
+el.thRange.addEventListener("input", e=>{
+  th[state.mode] = Number(e.target.value);
+  store.set("bitgil.th", th);
+  paintThreshold(); decideL(); render();
+});
+el.manRange.addEventListener("input", e=>{
+  state.raw = Number(e.target.value);
+  state.smooth = state.raw;
+  decideL(); render();
+});
+$("calDark").addEventListener("click", ()=> calibrate("dark"));
+$("calBright").addEventListener("click", ()=> calibrate("bright"));
+
+const cal = {};
+function calibrate(kind){
+  if(state.smooth == null) return;
+  cal[kind] = state.smooth;
+  const M = MODES[state.mode];
+  if(cal.dark != null && cal.bright != null){
+    th[state.mode] = Math.min(M.max, Math.max(1, (cal.dark + cal.bright)/2));
+    el.srcNote.textContent = "보정 완료. 어두움 " + cal.dark.toFixed(1) + M.unit +
+      " / 밝음 " + cal.bright.toFixed(1) + M.unit + " 의 중간값을 기준으로 잡았습니다.";
+  }else{
+    el.srcNote.textContent = (kind === "dark" ? "어두움" : "밝음") +
+      " 기준을 저장했습니다. 반대쪽 환경에서 나머지 한 번을 눌러 주세요.";
+  }
+  store.set("bitgil.th", th);
+  el.thRange.value = th[state.mode];
+  paintThreshold(); decideL(); render();
+}
+$("mALS").addEventListener("click", ()=> setMode("als"));
+$("mCAM").addEventListener("click", ()=> setMode("cam"));
+$("mMAN").addEventListener("click", ()=> setMode("man"));
+
+el.startBtn.addEventListener("click", async ()=>{
+  el.startBtn.disabled = true;
+  el.startBtn.textContent = "센서 확인 중…";
+  keepAwake();
+  const ok = await startALS();
+  if(ok){ stopSensors(); await setMode("als"); } else { await setMode("cam"); }
+  el.startBtn.disabled = false;
+  el.startBtn.textContent = "밝기 센서 켜기";
+});
+
+/* ── 8. 진리표 렌더 + 시작 시 자체 검증 ────────────────── */
+(function buildTable(){
+  const rows = [];
+  for(let i=0;i<16;i++){
+    const [P,V,L,R] = bits(i);
+    const f = F(P,V,L,R);
+    rows.push('<tr class="'+(f?"on":"")+'"><td>'+i+'</td><td>'+P+'</td><td>'+V+'</td><td>'+L+'</td><td>'+R+'</td><td class="f">'+f+'</td></tr>');
+  }
+  el.tbody.innerHTML = rows.join("");
+  const t = selfTest();
+  el.testPill.textContent = t.pass + "/16 일치";
+  if(t.fails.length) el.testPill.textContent += " · 불일치 m" + t.fails.join(",");
+})();
+
+render();
+</script>
+</body>
+</html>
